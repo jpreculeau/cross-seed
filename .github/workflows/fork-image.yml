@@ -1,0 +1,103 @@
+# Fork-only workflow: keeps branch `fork` = latest stable upstream tag of
+# major MAJOR + our commits, and publishes ghcr.io/<owner>/cross-seed:latest
+# from it. Upstream workflows (ci.yml, labeler.yml) are deleted on this
+# branch: they need Docker Hub secrets the fork does not have.
+# Dropped once upstream merges the patch (then use the official image).
+name: fork-image
+
+on:
+    push:
+        branches: ["fork"]
+    schedule:
+        - cron: "17 4 * * 1" # weekly rebase on the latest stable tag of MAJOR
+    workflow_dispatch:
+
+permissions:
+    contents: write
+    packages: write
+
+concurrency:
+    group: fork-image
+    cancel-in-progress: false
+
+env:
+    # Our commits are a v6 backport. Move to "7" on purpose, once upstream
+    # PR #1264 is merged, never by following the latest tag.
+    MAJOR: "6"
+
+jobs:
+    sync:
+        runs-on: ubuntu-latest
+        outputs:
+            base: ${{ steps.base.outputs.tag }}
+        steps:
+            - uses: actions/checkout@v4
+              with:
+                  ref: fork
+                  fetch-depth: 0
+            - name: Stable tags (upstream latest, fork current)
+              id: base
+              run: |
+                  stable() { grep -E "^v${MAJOR}\." | grep -Ev -- '-' | sort -V | tail -1; }
+                  git remote add upstream https://github.com/cross-seed/cross-seed.git
+                  git fetch --tags upstream
+                  if [ "$GITHUB_EVENT_NAME" = push ]; then
+                      # A push builds what it pushed: tag from HEAD, not upstream.
+                      tag=$(git tag --merged HEAD -l "v${MAJOR}.*" | stable)
+                  else
+                      tag=$(git tag -l "v${MAJOR}.*" | stable)
+                  fi
+                  [ -n "$tag" ] || { echo "::error::no stable upstream tag"; exit 1; }
+                  echo "tag=$tag" >> "$GITHUB_OUTPUT"
+                  echo "base: $tag"
+            - name: Rebase our commits onto it (no-op when already there)
+              if: github.event_name != 'push'
+              env:
+                  BASE: ${{ steps.base.outputs.tag }}
+              run: |
+                  if git merge-base --is-ancestor "$BASE" HEAD; then echo "already on $BASE"; exit 0; fi
+                  # Our commits = everything after the stable tag fork sits on.
+                  # (Stable v6 tags are cut on upstream's v6 branch, not on
+                  # master: a merge-base with master would replay v6 commits.)
+                  old=$(git tag --merged HEAD -l "v${MAJOR}.*" | grep -Ev -- '-' | sort -V | tail -1)
+                  [ -n "$old" ] || { echo "::error::no stable tag in fork"; exit 1; }
+                  echo "replaying $(git rev-list --count "$old"..HEAD) commits from $old onto $BASE"
+                  git config user.name "github-actions[bot]"
+                  git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+                  if ! git rebase --onto "$BASE" "$old" fork; then
+                      # Upstream changed a workflow deleted here (modify/delete
+                      # conflict): keep it deleted; anything else is an error.
+                      for f in $(git diff --name-only --diff-filter=U); do
+                          case "$f" in
+                              .github/workflows/ci.yml | .github/workflows/labeler.yml) git rm -q -- "$f" ;;
+                              *) echo "::error::rebase conflict on $f"; exit 1 ;;
+                          esac
+                      done
+                      GIT_EDITOR=true git rebase --continue
+                  fi
+                  git push --force-with-lease=fork:"$(git rev-parse origin/fork)" origin fork
+
+    image:
+        needs: sync
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+              with:
+                  ref: fork
+            - uses: docker/setup-qemu-action@v3
+            - uses: docker/setup-buildx-action@v3
+            - uses: docker/login-action@v3
+              with:
+                  registry: ghcr.io
+                  username: ${{ github.repository_owner }}
+                  password: ${{ secrets.GITHUB_TOKEN }}
+            - uses: docker/build-push-action@v6
+              with:
+                  context: .
+                  platforms: linux/amd64,linux/arm64
+                  push: true
+                  tags: |
+                      ghcr.io/${{ github.repository_owner }}/cross-seed:latest
+                      ghcr.io/${{ github.repository_owner }}/cross-seed:${{ needs.sync.outputs.base }}-fork
+                  cache-from: type=gha
+                  cache-to: type=gha,mode=max
