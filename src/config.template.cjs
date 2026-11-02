@@ -163,6 +163,16 @@ module.exports = {
 	flatLinking: false,
 
 	/**
+	 * With linkDirs and linkType "hardlink" or "reflink", inject perfect matches
+	 * ("strict" matches) in place, without a link, when no linkDir is on the
+	 * same drive as their data (e.g. a network share). Renamed or partial
+	 * matches from such a drive still fail, as they need a link.
+	 *
+	 * Default: false.
+	 */
+	injectInPlaceWithoutLinkDir: false,
+
+	/**
 	 * Determines flexibility of the matching algorithm, all options are equally safe.
 	 * Using "partial" is recommended as it will match all possible cross seeds.
 	 * Options: "strict", "flexible", "partial".

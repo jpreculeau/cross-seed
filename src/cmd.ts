@@ -119,6 +119,11 @@ function createCommandWithSharedOptions(name: string, description: string) {
 			"Use flat linking directory structure (without individual tracker folders)",
 			fallback(fileConfig.flatLinking, false),
 		)
+		.option(
+			"--inject-in-place-without-link-dir",
+			"Inject perfect matches in place, without a link, when no linkDir shares a drive with their data",
+			fallback(fileConfig.injectInPlaceWithoutLinkDir, false),
+		)
 		.addOption(
 			new Option(
 				"--link-type <type>",

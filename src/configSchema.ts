@@ -383,6 +383,10 @@ export const VALIDATION_SCHEMA = z
 			.boolean()
 			.nullish()
 			.transform((v) => (typeof v === "boolean" ? v : false)),
+		injectInPlaceWithoutLinkDir: z
+			.boolean()
+			.nullish()
+			.transform((v) => (typeof v === "boolean" ? v : false)),
 		maxDataDepth: z
 			.number()
 			.gte(1)

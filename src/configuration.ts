@@ -37,6 +37,7 @@ export interface FileConfig {
 	linkDirs?: string[];
 	linkType?: string;
 	flatLinking?: boolean;
+	injectInPlaceWithoutLinkDir?: boolean;
 	maxDataDepth?: number;
 	linkCategory?: string;
 	torrentDir?: string;

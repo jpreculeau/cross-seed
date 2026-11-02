@@ -1,7 +1,7 @@
 import ms from "ms";
 import path from "path";
 import { isDeepStrictEqual } from "util";
-import { testLinking } from "../action.js";
+import { linkingCheckSkippedInPlace, testLinking } from "../action.js";
 import {
 	ABS_WIN_PATH_REGEX,
 	Decision,
@@ -269,6 +269,13 @@ export async function validateClientSavePaths(
 			throw new CrossSeedError(
 				`Cannot use linkDirs with cross platform cross-seed and ${label}, please run cross-seed in docker or natively to match your torrent client (https://www.cross-seed.org/docs/basics/managing-the-daemon): ${savePath}`,
 			);
+		}
+		if (await linkingCheckSkippedInPlace(savePath)) {
+			logger.warn({
+				label,
+				message: `No linkDir shares a drive with ${savePath}: perfect matches will be injected in place without a link (injectInPlaceWithoutLinkDir), other matches will fail.`,
+			});
+			continue;
 		}
 		try {
 			const res = await testLinking(

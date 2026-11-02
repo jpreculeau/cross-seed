@@ -12,6 +12,7 @@ export interface RuntimeConfig {
 	linkDirs: string[];
 	linkType: LinkType;
 	flatLinking: boolean;
+	injectInPlaceWithoutLinkDir: boolean;
 	maxDataDepth: number;
 	linkCategory?: string;
 	torrentDir?: string;

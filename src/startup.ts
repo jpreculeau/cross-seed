@@ -1,7 +1,7 @@
 import { constants, mkdir, stat } from "fs/promises";
 import ms from "ms";
 import { inspect } from "util";
-import { testLinking } from "./action.js";
+import { linkingCheckSkippedInPlace, testLinking } from "./action.js";
 import { validateUArrLs } from "./arr.js";
 import {
 	getClients,
@@ -33,7 +33,7 @@ process.on("SIGTERM", exitGracefully);
  * verifies the config paths provided against the filesystem
  * @returns true (if paths are valid)
  */
-async function checkConfigPaths(): Promise<void> {
+export async function checkConfigPaths(): Promise<void> {
 	const { dataDirs, injectDir, linkDirs, outputDir, torrentDir } =
 		getRuntimeConfig();
 	const READ_ONLY = constants.R_OK;
@@ -88,6 +88,12 @@ async function checkConfigPaths(): Promise<void> {
 	if (linkDirs.length) {
 		for (const [index, dataDir] of dataDirs.entries()) {
 			const dataDirName = `dataDir${index}`;
+			if (await linkingCheckSkippedInPlace(dataDir)) {
+				logger.warn(
+					`No linkDir shares a drive with ${dataDirName} ${dataDir}: perfect matches will be injected in place without a link (injectInPlaceWithoutLinkDir), other matches will fail.`,
+				);
+				continue;
+			}
 			try {
 				const res = await testLinking(
 					dataDir,
