@@ -298,7 +298,12 @@ export async function searchForLocalTorrentByCriteria(
 		rawSearchees.push(
 			...(
 				await mapAsync(
-					await findPotentialNestedRoots(criteria.path, maxDataDepth),
+					await findPotentialNestedRoots(
+						criteria.path,
+						maxDataDepth,
+						undefined,
+						options.configOverride,
+					),
 					(path) =>
 						createSearcheeFromPath(
 							path,

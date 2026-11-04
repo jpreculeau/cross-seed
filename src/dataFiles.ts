@@ -2,13 +2,14 @@ import { FSWatcher, watch } from "fs";
 import { readdir, readFile, stat } from "fs/promises";
 import { basename, dirname, extname, join, resolve, sep } from "path";
 import {
+	BOOK_EXTENSIONS,
 	IGNORED_FOLDERS_SUBSTRINGS,
 	LEVENSHTEIN_DIVISOR,
 	VIDEO_EXTENSIONS,
 } from "./constants.js";
 import { db } from "./db.js";
 import { logger } from "./logger.js";
-import { getRuntimeConfig } from "./runtimeConfig.js";
+import { getRuntimeConfig, RuntimeConfig } from "./runtimeConfig.js";
 import {
 	createSearcheeFromPath,
 	File,
@@ -35,6 +36,12 @@ interface DataEntry {
 	title: string;
 	path: string;
 }
+
+// Ebook extensions a standalone file can have to be its own searchee; .html is
+// left out, it is far more often a stray readme than a book torrent.
+const STANDALONE_BOOK_EXTENSIONS = BOOK_EXTENSIONS.filter(
+	(ext) => ext !== ".html",
+);
 
 const watchers: Map<string, FSWatcher> = new Map();
 const modifiedPaths: Map<string, Set<string>> = new Map();
@@ -232,14 +239,24 @@ export async function getDataByFuzzyName(
 		.map((r) => r.unwrap());
 }
 
-export function shouldIgnorePathHeuristically(root: string, isDir: boolean) {
+export function shouldIgnorePathHeuristically(
+	root: string,
+	isDir: boolean,
+	configOverride: Partial<RuntimeConfig> = {},
+) {
 	const searchBasename = basename(root);
 	if (isDir) {
 		return IGNORED_FOLDERS_SUBSTRINGS.includes(
 			searchBasename.toLowerCase(),
 		);
+	} else if (VIDEO_EXTENSIONS.includes(extname(searchBasename))) {
+		return false;
 	} else {
-		return !VIDEO_EXTENSIONS.includes(extname(searchBasename));
+		// A lone ebook is a torrent of its own: keep it when non-videos are wanted
+		return !(
+			STANDALONE_BOOK_EXTENSIONS.includes(extname(searchBasename)) &&
+			getRuntimeConfig(configOverride).includeNonVideos
+		);
 	}
 }
 
@@ -247,13 +264,17 @@ export async function findPotentialNestedRoots(
 	root: string,
 	depth: number,
 	isDirHint?: boolean,
+	configOverride: Partial<RuntimeConfig> = {},
 ): Promise<string[]> {
 	try {
 		const isDir =
 			isDirHint !== undefined
 				? isDirHint
 				: (await stat(root)).isDirectory();
-		if (depth <= 0 || shouldIgnorePathHeuristically(root, isDir)) {
+		if (
+			depth <= 0 ||
+			shouldIgnorePathHeuristically(root, isDir, configOverride)
+		) {
 			return [];
 		} else if (depth > 0 && isDir) {
 			const directChildren = await readdir(root, { withFileTypes: true });
@@ -264,6 +285,7 @@ export async function findPotentialNestedRoots(
 						join(root, dirent.name),
 						depth - 1,
 						dirent.isDirectory(),
+						configOverride,
 					),
 			);
 			return [...allDescendants, root]; // deepest paths first for memoization
