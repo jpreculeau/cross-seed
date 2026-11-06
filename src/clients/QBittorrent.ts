@@ -302,7 +302,6 @@ export default class QBittorrent implements TorrentClient {
 							match.replace(hash, sanitizeInfoHash(hash)),
 					);
 
-		let response: Response | undefined;
 		const retries = Math.max(numRetries, 0);
 		for (let i = 0; i <= retries; i++) {
 			try {
@@ -310,7 +309,7 @@ export default class QBittorrent implements TorrentClient {
 					label: this.label,
 					message: `Making request (${retries - i}) to ${path} with body ${bodyStr}`,
 				});
-				response = await fetch(`${this.url.href}${path}`, {
+				const response = await fetch(`${this.url.href}${path}`, {
 					method: "POST",
 					headers: {
 						Cookie: this.cookie,
@@ -326,7 +325,7 @@ export default class QBittorrent implements TorrentClient {
 							label: this.label,
 							message: `Received 403 from API after ${retries} retries`,
 						});
-						break;
+						return undefined;
 					}
 					logger.verbose({
 						label: this.label,
@@ -344,7 +343,7 @@ export default class QBittorrent implements TorrentClient {
 							label: this.label,
 							message: `Received ${response.status} from API after ${retries} retries`,
 						});
-						break;
+						return undefined;
 					}
 					logger.verbose({
 						label: this.label,
@@ -355,7 +354,12 @@ export default class QBittorrent implements TorrentClient {
 					);
 					continue;
 				}
-				break;
+				// reading the body is part of the same try/catch: a socket
+				// can close mid-stream after fetch() has already resolved
+				// (e.g. "SocketError: other side closed"), and that failure
+				// deserves the same retry treatment as a failed fetch()
+				// instead of escaping unretried and unhandled.
+				return await response.text();
 			} catch (e) {
 				if (i >= retries) {
 					logger.error({
@@ -363,7 +367,7 @@ export default class QBittorrent implements TorrentClient {
 						message: `Request failed after ${retries} retries: ${e.message}`,
 					});
 					logger.debug(e);
-					break;
+					return undefined;
 				}
 				logger.verbose({
 					label: this.label,
@@ -373,7 +377,7 @@ export default class QBittorrent implements TorrentClient {
 				continue;
 			}
 		}
-		return response?.text();
+		return undefined;
 	}
 
 	async getPreferences(): Promise<Preferences> {
